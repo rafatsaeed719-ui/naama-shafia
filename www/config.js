@@ -17,8 +17,8 @@ window.NAAMA_CONFIG = {
   // المدير العام: يدخل برقم التليفون ده
   adminPhones: ["01207760898"],
 
-  // عنوان البرنامج على الإنترنت (بيتبعت في دعوة الخدام)
-  publicUrl: "https://rafatsaeed719-ui.github.io/naama-shafia/",
+  // لينك تحميل البرنامج (بيتبعت في دعوة الخدام)
+  publicUrl: "https://github.com/rafatsaeed719-ui/naama-shafia/releases/latest/download/NaamaShafia.apk",
   facebook: "https://www.facebook.com/share/1G9xELWySL/",
   developerSite: "https://rafatsaeed.com"
 };

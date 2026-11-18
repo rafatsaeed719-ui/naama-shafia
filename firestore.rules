@@ -1,0 +1,85 @@
+rules_version = '2';
+// قواعد أمان برنامج النعمة الشافية
+// الصقها في Firebase > Firestore Database > Rules ودوس Publish
+service cloud.firestore {
+  match /databases/{d}/documents {
+    function si() { return request.auth != null; }
+    function admin() { return si() && request.auth.token.email in ['01207760898@naama.app']; }
+    function me() { return get(/databases/$(d)/documents/users/$(request.auth.uid)).data; }
+    function ok() { return admin() || (si() && exists(/databases/$(d)/documents/users/$(request.auth.uid)) && me().approved == true); }
+    function sec() { return me().sector; }
+    function lead(s) { return admin() || (ok() && me().role == 'lead' && sec() == s); }
+    function inSec(s) { return admin() || (ok() && sec() == s); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // الخدام: كل واحد يعمل حسابه ويستنى موافقة المدير
+    match /users/{id} {
+      allow read: if si();
+      allow create: if si() && request.auth.uid == id
+        && (admin() || (request.resource.data.approved == false && request.resource.data.role == 'servant'));
+      allow update: if admin() || (si() && request.auth.uid == id && !changed().hasAny(['approved', 'role', 'sector']));
+      allow delete: if admin();
+    }
+    // القطاعات: الكل يشوفها، المدير بس يعدّل
+    match /sectors/{id} { allow read: if true; allow write: if admin(); }
+
+    // المخدومين: حسب "مين يشوف الملف"
+    match /people/{id} {
+      function canR(r) { return r.by == request.auth.uid || (admin() && r.vis != 'me') || (ok() && r.vis == 'team' && sec() == r.sector); }
+      allow read: if si() && canR(resource.data);
+      allow create: if lead(request.resource.data.sector) && request.resource.data.by == request.auth.uid;
+      allow update: if si() && (resource.data.by == request.auth.uid
+        || (admin() && resource.data.vis != 'me')
+        || (lead(resource.data.sector) && resource.data.vis == 'team')
+        || (canR(resource.data) && changed().hasOnly(['updates'])));
+      allow delete: if si() && (resource.data.by == request.auth.uid || (admin() && resource.data.vis != 'me'));
+    }
+    match /ledger/{id} {
+      allow read: if si() && inSec(resource.data.sector);
+      allow create: if lead(request.resource.data.sector);
+      allow update, delete: if lead(resource.data.sector);
+    }
+    match /acts/{id} {
+      allow read: if si() && inSec(resource.data.sector);
+      allow create: if inSec(request.resource.data.sector);
+      allow update, delete: if inSec(resource.data.sector);
+    }
+    match /visits/{id} {
+      allow read: if si() && inSec(resource.data.sector);
+      allow create: if lead(request.resource.data.sector);
+      allow update: if lead(resource.data.sector)
+        || (si() && resource.data.sid == request.auth.uid && changed().hasOnly(['status', 'report', 'doneAt']));
+      allow delete: if lead(resource.data.sector);
+    }
+    match /tasks/{id} {
+      allow read: if si() && inSec(resource.data.sector);
+      allow create: if lead(request.resource.data.sector);
+      allow update: if lead(resource.data.sector)
+        || (si() && resource.data.sid == request.auth.uid && changed().hasOnly(['done', 'doneAt']));
+      allow delete: if lead(resource.data.sector);
+    }
+    match /reqs/{id} {
+      allow read: if si() && inSec(resource.data.sector);
+      allow create: if inSec(request.resource.data.sector) && request.resource.data.from == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update, delete: if lead(resource.data.sector);
+    }
+    match /events/{id} { allow read: if si(); allow write: if admin(); }
+
+    match /notifs/{id} {
+      allow read: if si() && (request.auth.uid in resource.data.to
+        || request.auth.token.email.split('@')[0] in resource.data.to
+        || (admin() && 'admin' in resource.data.to));
+      allow create: if ok();
+      allow update: if si() && changed().hasOnly(['read']);
+      allow delete: if admin();
+    }
+    match /media/{id} {
+      allow read: if si() && (resource.data.by == request.auth.uid
+        || (admin() && resource.data.vis != 'me')
+        || (ok() && resource.data.vis == 'team' && (resource.data.sector == '' || resource.data.sector == sec())));
+      allow create: if ok() && request.resource.data.by == request.auth.uid;
+      allow update, delete: if admin() || (si() && resource.data.by == request.auth.uid);
+    }
+  }
+}

@@ -1,0 +1,84 @@
+name: Build APK + AAB + Website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install
+        run: npm install
+      - name: Add Android platform
+        run: npx cap add android
+      - name: App icon + splash
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff' || true
+      - name: Version, notification icon, permissions
+        run: |
+          G=android/app/build.gradle
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" $G
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${{ github.run_number }}\"/" $G
+          grep -n "versionCode\|versionName" $G
+          grep -n "SdkVersion" android/variables.gradle
+          mkdir -p android/app/src/main/res/drawable
+          cp assets/ic_stat_naama.png android/app/src/main/res/drawable/ic_stat_naama.png
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n</manifest>#' $M
+          grep -q 'xmlns:tools' $M || sed -i '0,/<manifest /s#<manifest #<manifest xmlns:tools="http://schemas.android.com/tools" #' $M
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />\n    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove" />\n</manifest>#' $M
+          cat $M
+      - name: Sync
+        run: npx cap sync android
+      - name: Build APK (debug) + AAB (release, unsigned)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug bundleRelease
+          cp app/build/outputs/apk/debug/app-debug.apk ../NaamaShafia.apk
+          cp app/build/outputs/bundle/release/app-release.aab ../NaamaShafia-unsigned.aab
+          M2=app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
+          [ -f "$M2" ] || M2=$(find app/build/intermediates -path "*release*" -name AndroidManifest.xml | head -1)
+          echo "merged: $M2"; grep -n "permission" "$M2"
+          if grep -q "EXACT_ALARM" "$M2"; then echo "exact alarm still in merged manifest"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NaamaShafia-android
+          path: |
+            NaamaShafia.apk
+            NaamaShafia-unsigned.aab
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: النعمة الشافية - نسخة 1.0.${{ github.run_number }}
+          files: |
+            NaamaShafia.apk
+            NaamaShafia-unsigned.aab
+
+  website:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+      - uses: actions/deploy-pages@v4

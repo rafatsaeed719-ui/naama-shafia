@@ -1,0 +1,10 @@
+{
+  "appId": "com.bethel.naama",
+  "appName": "النعمة الشافية",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_naama", "iconColor": "#0B2E5E" },
+    "SystemBars": { "insetsHandling": "css", "style": "DARK" }
+  }
+}
